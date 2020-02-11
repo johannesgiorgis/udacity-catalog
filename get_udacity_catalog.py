@@ -41,7 +41,8 @@ def navigate_to_page():
     navigate to the Udacity Catalog web page
     """
     logger.info("Navigating to the Udacity Catalog web page...")
-    chrome_driver = "/usr/bin/chromedriver"
+    # chrome_driver = "/usr/bin/chromedriver" # linux
+    chrome_driver = "/usr/local/bin/chromedriver"  # mac
     browser = webdriver.Chrome(executable_path=chrome_driver)
     browser.get(UDACITY_CATALOG_URL)
 
@@ -53,11 +54,12 @@ def navigate_to_page():
             EC.presence_of_element_located((By.XPATH, pop_up_xml_path))
         )
         logger.info("Course Catalog Page is ready!")
+
+        logger.info("Closing pop up button")
+        popup_close_button.click()
+
     except TimeoutException:
         logger.exception("Loading Course Catalog Page took too much time!")
-
-    logger.info("Closing pop up button")
-    popup_close_button.click()
 
     logger.info("Completed Navigating to the Udacity Catalog web page")
     return browser
@@ -293,6 +295,8 @@ def convert_products_list_to_df(full_catalog_list):
             "detail",
         ],
     )
+    # ensure index starts at 1 instead of 0
+    products_df.index += 1
     logger.info("Completed converting list of list of courses into dataframe")
     return products_df
 
