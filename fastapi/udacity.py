@@ -1,5 +1,5 @@
 """
-Gets full Udacity catalog into a dated csv file
+Scrape Udacity
 """
 
 import datetime
@@ -7,8 +7,9 @@ import logging
 import os
 from time import sleep
 
+import bs4
 import pandas as pd
-import requests
+
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -17,57 +18,85 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-# set logging
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# create handler
-c_handler = logging.StreamHandler()
-c_handler.setLevel(logging.INFO)
-
-# Create formatters and add it to handlers
-LOG_FORMAT = "[%(asctime)s - %(levelname)s - %(module)s:%(lineno)5s ] %(message)s"
-c_format = logging.Formatter(LOG_FORMAT)
-c_handler.setFormatter(c_format)
-
-# Add handlers to the logger
-logger.addHandler(c_handler)
 
 UDACITY_CATALOG_URL = "https://www.udacity.com/courses/all"
 
 
-def navigate_to_page():
+def get_udacity_catalog_list() -> dict:
     """
-    navigate to the Udacity Catalog web page
+    get udacity catalog list
     """
-    logger.info("Navigating to the Udacity Catalog web page...")
-    # chrome_driver = "/usr/bin/chromedriver" # linux
-    chrome_driver = "/usr/local/bin/chromedriver"  # mac
-    browser = webdriver.Chrome(executable_path=chrome_driver)
-    browser.get(UDACITY_CATALOG_URL)
+    logger.info("Getting Udacity catalog list...")
+    browser = navigate_to_page()
+    udacity_catalog_list = get_full_catalog_list(browser)
+    # udacity_catalog_list = get_full_catalog_list()
+    udacity_catalog = {"udacity": udacity_catalog_list}
+    browser.quit()
+    logger.info(f"Completed getting {len(udacity_catalog)} Udacity catalog list")
+    return udacity_catalog
 
-    pop_up_xml_path = (
-        "/html/body/ir-root/ir-content/ir-autopopup-modal/ir-modal/div/div[2]/div/div[1]"
+
+def get_full_catalog_list(browser: webdriver, use_mock: bool = False) -> list:
+    """
+    get full catalog list compromised of
+        - Nanodegree Programs
+        - Individual Courses
+    """
+    if use_mock:
+        logger.info("Getting mock data products list...")
+        return get_mock_data_products_list()
+
+    logger.info("Getting full catalog list...")
+    full_catalog_list = []
+
+    soup = bs4.BeautifulSoup(browser.page_source, "html.parser")
+
+    nanodegree_catalog_list = get_nanodegree_catalog_list(soup)
+    full_catalog_list.extend(nanodegree_catalog_list)
+
+    course_catalog_list = get_course_catalog_list(soup)
+    full_catalog_list.extend(course_catalog_list)
+
+    logger.info(f"Completed getting {len(full_catalog_list)} full catalog list")
+    return full_catalog_list
+
+
+def get_nanodegree_catalog_list(soup: BeautifulSoup) -> list:
+    """
+    get nanodegree catalog list
+    """
+    logger.info("Getting nanodegree catalog list...")
+    nanodegree_cards = soup.find_all(
+        "div",
+        {
+            "class": "course-summary-card row row-gap-medium catalog-card nanodegree-card ng-star-inserted"
+        },
     )
+    logger.info(f"Found {len(nanodegree_cards)} nanodegree cards on the Catalog web page")
 
-    delay = 30  # seconds
-    try:
-        popup_close_button = WebDriverWait(browser, delay).until(
-            EC.presence_of_element_located((By.XPATH, pop_up_xml_path))
-        )
-        logger.info("Course Catalog Page is ready!")
-
-        logger.info("Closing pop up button")
-        popup_close_button.click()
-
-    except TimeoutException:
-        logger.exception("Loading Course Catalog Page took too much time!")
-
-    logger.info("Completed Navigating to the Udacity Catalog web page")
-    return browser
+    nanodegree_catalog_list = get_programs_details_list(nanodegree_cards)
+    logger.info(f"Completed getting {len(nanodegree_catalog_list)} nanodegree catalog list")
+    return nanodegree_catalog_list
 
 
-def get_programs_details_list(course_cards):
+def get_course_catalog_list(soup):
+    """
+    get course catalog list
+    """
+    logger.info("Getting course catalog list...")
+    course_cards = soup.find_all(
+        "div", {"class": "course-summary-card row row-gap-medium catalog-card ng-star-inserted"},
+    )
+    logger.info(f"Found {len(course_cards)} course cards on the Catalog web page")
+
+    course_catalog_list = get_programs_details_list(course_cards)
+    logger.info(f"Completed getting {len(course_catalog_list)} course catalog list")
+    return course_catalog_list
+
+
+def get_programs_details_list(course_cards: bs4.element.ResultSet) -> list:
     """
     returns list of lists containing info on programs
     Each program info list contains -
@@ -154,74 +183,38 @@ def get_programs_details_list(course_cards):
     return all_courses_info_list
 
 
-def get_nanodegree_catalog_list(soup):
+def navigate_to_page() -> webdriver:
     """
-    get nanodegree catalog list
+    navigate to the Udacity Catalog web page
     """
-    logger.info("Getting nanodegree catalog list...")
-    nanodegree_cards = soup.find_all(
-        "div",
-        {
-            "class": "course-summary-card row row-gap-medium catalog-card nanodegree-card ng-star-inserted"
-        },
+    logger.info("Navigating to the Udacity Catalog web page...")
+    # chrome_driver = "/usr/bin/chromedriver" # linux
+    chrome_driver = "/usr/local/bin/chromedriver"  # mac
+    browser = webdriver.Chrome(executable_path=chrome_driver)
+    browser.get(UDACITY_CATALOG_URL)
+
+    pop_up_xml_path = (
+        "/html/body/ir-root/ir-content/ir-autopopup-modal/ir-modal/div/div[2]/div/div[1]"
     )
-    logger.info(f"Found {len(nanodegree_cards)} nanodegree cards on the Catalog web page")
 
-    nanodegree_catalog_list = get_programs_details_list(nanodegree_cards)
-    logger.info(f"Completed getting {len(nanodegree_catalog_list)} nanodegree catalog list")
-    return nanodegree_catalog_list
+    delay = 30  # seconds
+    try:
+        popup_close_button = WebDriverWait(browser, delay).until(
+            EC.presence_of_element_located((By.XPATH, pop_up_xml_path))
+        )
+        logger.info("Course Catalog Page is ready!")
 
+        logger.info("Closing pop up button")
+        popup_close_button.click()
 
-def get_course_catalog_list(soup):
-    """
-    get course catalog list
-    """
-    logger.info("Getting course catalog list...")
-    course_cards = soup.find_all(
-        "div", {"class": "course-summary-card row row-gap-medium catalog-card ng-star-inserted"},
-    )
-    logger.info(f"Found {len(course_cards)} course cards on the Catalog web page")
+    except TimeoutException:
+        logger.exception("Loading Course Catalog Page took too much time!")
 
-    course_catalog_list = get_programs_details_list(course_cards)
-    logger.info(f"Completed getting {len(course_catalog_list)} course catalog list")
-    return course_catalog_list
+    logger.info("Completed Navigating to the Udacity Catalog web page")
+    return browser
 
 
-def get_full_catalog_list(browser):
-    """
-    get full catalog list compromised of
-        - Nanodegree Programs
-        - Individual Courses
-    """
-    logger.info("Getting full catalog list...")
-    full_catalog_list = []
-
-    soup = BeautifulSoup(browser.page_source, "html.parser")
-
-    nanodegree_catalog_list = get_nanodegree_catalog_list(soup)
-    full_catalog_list.extend(nanodegree_catalog_list)
-
-    course_catalog_list = get_course_catalog_list(soup)
-    full_catalog_list.extend(course_catalog_list)
-
-    logger.info(f"Completed getting {len(full_catalog_list)} full catalog list")
-    return full_catalog_list
-
-
-def get_udacity_catalog_list():
-    """
-    get udacity catalog list
-    """
-    pass
-    logger.info("Getting Udacity catalog list...")
-    browser = navigate_to_page()
-    udacity_catalog_list = get_full_catalog_list(browser)
-    browser.quit()
-    logger.info(f"Completed getting {len(udacity_catalog_list)} Udacity catalog list")
-    return udacity_catalog_list
-
-
-def get_mock_data_products_list():
+def get_mock_data_products_list() -> list:
     """
     mock data products list
     """
@@ -269,43 +262,3 @@ def get_mock_data_products_list():
         ],
     ]
     return mock_products_list
-
-
-def convert_products_list_to_df(full_catalog_list):
-    """
-    converts list of list of courses into dataframe
-    """
-    logger.info("Converting list of list of courses into dataframe...")
-
-    products_df = pd.DataFrame(
-        full_catalog_list,
-        columns=["name", "type", "link", "category", "skills", "collaborators", "level", "detail",],
-    )
-    # ensure index starts at 1 instead of 0
-    products_df.index += 1
-    logger.info("Completed converting list of list of courses into dataframe")
-    return products_df
-
-
-def save_df_to_csv(df):
-    """
-    save dataframe as csv file
-    """
-    logger.info("Saving dataframe as a csv file...")
-    now = datetime.datetime.now()
-    csv_dir = ""
-    csv_file_name = now.strftime("%F") + "-udacity-course-catalog.csv"
-    csv_file_full_path = csv_dir + csv_file_name
-    logger.info(f"Saving to '{csv_file_full_path}'")
-    df.to_csv(csv_file_full_path, sep="|")
-    logger.info("Completed saving dataframe as a csv file")
-
-
-if __name__ == "__main__":
-    logger.info("Program Started")
-    udacity_catalog_list = get_udacity_catalog_list()
-    # udacity_catalog_list = get_mock_data_products_list()
-    catalog_df = convert_products_list_to_df(udacity_catalog_list)
-    catalog_df = convert_products_list_to_df(udacity_catalog_list)
-    save_df_to_csv(catalog_df)
-    logger.info("Program Completed")
