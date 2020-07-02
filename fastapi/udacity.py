@@ -2,26 +2,25 @@
 Scrape Udacity
 """
 
-import datetime
 import logging
-import os
 from time import sleep
+from typing import List
 
 import bs4
-import pandas as pd
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from tinydb import TinyDB
 
 
 logger = logging.getLogger(__name__)
 
 UDACITY_CATALOG_URL = "https://www.udacity.com/courses/all"
+JSON_DB = "catalog-udacity.json"
 
 
 def get_udacity_catalog_list() -> dict:
@@ -30,12 +29,20 @@ def get_udacity_catalog_list() -> dict:
     """
     logger.info("Getting Udacity catalog list...")
     browser = navigate_to_page()
-    udacity_catalog_list = get_full_catalog_list(browser)
-    # udacity_catalog_list = get_full_catalog_list()
-    udacity_catalog = {"udacity": udacity_catalog_list}
+    udacity_catalog = get_full_catalog_list(browser)
+    save_to_local_database(udacity_catalog, table_name="udacity")
     browser.quit()
     logger.info(f"Completed getting {len(udacity_catalog)} Udacity catalog list")
-    return udacity_catalog
+    return {"udacity": udacity_catalog}
+
+
+def save_to_local_database(catalog: List[dict], table_name: str):
+    logger.info(f"Saving {len(catalog)} course infos to {JSON_DB} database...")
+    db = TinyDB(JSON_DB)
+    table = db.table(table_name)
+    for course_info in catalog:
+        table.insert(course_info)
+    logger.info(f"Completed saving {len(catalog)} course infos to {JSON_DB} database!")
 
 
 def get_full_catalog_list(browser: webdriver, use_mock: bool = False) -> list:
@@ -112,12 +119,21 @@ def get_programs_details_list(course_cards: bs4.element.ResultSet) -> list:
     logger.info("Getting program details list...")
     all_courses_info_list = []
     for i, course_card in enumerate(course_cards):
-        course_info = []
+        course_info = {
+            "course_name": "",
+            "course_type": "",
+            "course_link": "",
+            "category": "",
+            "skills": [],
+            "collaborators": [],
+            "course_level": "",
+            "course_details": "",
+        }
 
         # course name, type and link
         course_link = course_card.find("a", {"class": "capitalize"})
         course_name = course_link.text
-        course_info.append(course_name)
+        course_info["course_name"] = course_name
 
         course_link = course_link.get("href")
 
@@ -126,25 +142,21 @@ def get_programs_details_list(course_cards: bs4.element.ResultSet) -> list:
         else:
             course_type = "course"
 
-        course_info.append(course_type)
-        course_info.append(course_link)
+        course_info["course_type"] = course_type
+        course_info["course_link"] = course_link
 
         # category
         category = course_card.find("h4", {"class": "category ng-star-inserted"})
         if category:
             category = category.text.strip()
-            course_info.append(category)
-        else:
-            course_info.append("")
+            course_info["category"] = category
 
         # skills
         skills_section = course_card.find("div", {"class": "skills ng-star-inserted"})
         if skills_section:
             skills_list = skills_section.find_all("span", {"class": "ng-star-inserted"})
-            skills = [skill.text for skill in skills_list]
-            course_info.append("".join(skills))
-        else:
-            course_info.append("")
+            skills = [skill.text.strip(" ").strip(",") for skill in skills_list]
+            course_info["skills"] = skills
 
         # collaborators
         collaborators_section = course_card.find(
@@ -155,17 +167,13 @@ def get_programs_details_list(course_cards: bs4.element.ResultSet) -> list:
                 "span", {"class": "ng-star-inserted"}
             )
             collaborators = [collaborator.text for collaborator in collaborators_list]
-            course_info.append("".join(collaborators))
-        else:
-            course_info.append("")
+            course_info["collaborators"] = collaborators
 
         # course level
         right_section = course_card.find("div", {"class": "right"})
         if right_section:
             course_level = right_section.text.capitalize()
-            course_info.append(course_level)
-        else:
-            course_info.append("")
+            course_info["course_level"] = course_level
 
         # course details
         details_section = course_card.find("div", {"class": "card__expander"}).find(
@@ -173,9 +181,7 @@ def get_programs_details_list(course_cards: bs4.element.ResultSet) -> list:
         )
         if details_section:
             course_details = details_section.text
-            course_info.append(course_details)
-        else:
-            course_info.append("")
+            course_info["course_details"] = course_details
 
         all_courses_info_list.append(course_info)
 
@@ -197,8 +203,10 @@ def navigate_to_page() -> webdriver:
         "/html/body/ir-root/ir-content/ir-autopopup-modal/ir-modal/div/div[2]/div/div[1]"
     )
 
-    delay = 30  # seconds
+    delay = 5  # seconds
     try:
+        # logger.info(f"Sleeping for {delay} seconds")
+        # sleep(delay)
         popup_close_button = WebDriverWait(browser, delay).until(
             EC.presence_of_element_located((By.XPATH, pop_up_xml_path))
         )
@@ -218,6 +226,7 @@ def get_mock_data_products_list() -> list:
     """
     mock data products list
     """
+    # TODO: Conver to List of dictionaries
     logger.info("Getting products test data...")
     mock_products_list = [
         [
