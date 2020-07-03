@@ -4,7 +4,6 @@ Main
 
 from fastapi import FastAPI
 
-# from udacity import get_udacity_catalog_list
 import udacity
 
 app = FastAPI()

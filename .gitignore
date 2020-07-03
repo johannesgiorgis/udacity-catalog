@@ -7,3 +7,5 @@ venv/
 # files
 *csv
 *log
+
+__pycache__/
